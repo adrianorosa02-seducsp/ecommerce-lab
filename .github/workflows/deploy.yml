@@ -14,7 +14,6 @@ jobs:
           username: ${{ vars.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           source: "."
-          # Ajustado para cair direto na pasta labXX que o Nginx está monitorando
           target: "/var/inetpub/wwwroot/projetos/lab${{ vars.ALUNO_NUM }}"
 
       - name: Poetry & PM2 Restart via SSH
@@ -24,15 +23,18 @@ jobs:
           username: ${{ vars.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            # 1. Entrar na pasta do Lab
+            # 1. Carregar variáveis de ambiente (Poetry e NVM/PM2) para a sessão SSH não-interativa
+            export PATH="$HOME/.local/bin:$HOME/.poetry/bin:$PATH"
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            # 2. Entrar na pasta do Lab
             cd /var/inetpub/wwwroot/projetos/lab${{ vars.ALUNO_NUM }}
             
-            # 2. Configurar Path e Instalar dependências
-            export PATH="$HOME/.local/bin:$PATH"
+            # 3. Instalar dependências com o Poetry
             poetry install --only main
             
-            # 3. Restart Inteligente no PM2
-            # Usamos a porta 80XX baseada no número do lab
+            # 4. Restart Inteligente no PM2
             pm2 delete "lab-${{ vars.ALUNO_NUM }}" || true
             pm2 start "poetry run gunicorn -b 0.0.0.0:80${{ vars.ALUNO_NUM }} main:app" --name "lab-${{ vars.ALUNO_NUM }}"
             pm2 save
