@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout - E-commerce Seguro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <h2 class="mb-4 text-center">Finalização do Pedido</h2>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card p-4 shadow-sm">
+                    <h4>Endereço de Entrega</h4>
+                    <div class="mb-3">
+                        <label for="endereco" class="form-label">Digite seu endereço completo:</label>
+                        <input type="text" id="endereco" class="form-control" placeholder="Ex: Rua das Flores, 123 - Marília, SP">
+                    </div>
+                    <button class="btn btn-secondary w-100" onclick="calcularFrete()">Calcular Frete (Frota Própria)</button>
+                    <hr>
+                    <div id="info-frete" class="mt-3"></div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-4 shadow-sm">
+                    <h4>Resumo do Pagamento</h4>
+                    <p>Produto: Camisa Tecnológica - R$ 100,00</p>
+                    <p id="resumo-frete">Frete: R$ 0,00</p>
+                    <hr>
+                    <h5 id="resumo-total">Total: R$ 100,00</h5>
+                    <button id="checkout-button" class="btn btn-success w-100 mt-3" disabled>Pagar com Stripe</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const stripe = Stripe("{{ stripe_public_key }}");
+        let valorProduto = 100.0;
+        let valorFreteCalculado = 0.0;
+
+        function calcularFrete() {
+            const endereco = document.getElementById("endereco").value;
+            if (!endereco || !endereco.trim()) {
+                alert('Por favor, informe o endereço para calcular o frete.');
+                return;
+            }
+            fetch("/api/calcular-frete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ endereco_destino: endereco })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.erro) {
+                    alert(data.erro);
+                    return;
+                }
+                // atualiza valor do frete com o valor retornado pela API
+                valorFreteCalculado = Number(data.valor_frete) || 0;
+                // corrigir id usado e exibir o valor calculado corretamente
+                document.getElementById("info-frete").innerHTML = 
+                    `<p class="text-success"><strong>Modalidade:</strong> ${data.modalidade}<br>` +
+                    `<strong>Distância:</strong> ${data.distancia_km} km (<em>${data.tempo_estimado}</em>)<br>` +
+                    `<strong>Frete:</strong> R$ ${valorFreteCalculado.toFixed(2)}</p>`;
+
+                document.getElementById("resumo-frete").innerText = `Frete: R$ ${valorFreteCalculado.toFixed(2)}`;
+                let total = valorProduto + valorFreteCalculado;
+                document.getElementById("resumo-total").innerText = `Total: R$ ${total.toFixed(2)}`;
+                document.getElementById("checkout-button").removeAttribute("disabled");
+            })
+            .catch(err => {
+                console.error('Erro ao calcular frete:', err);
+                alert('Não foi possível calcular o frete. Tente novamente mais tarde.');
+            });
+        }
+
+        document.getElementById("checkout-button").addEventListener("click", () => {
+            fetch("/criar-checkout-session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ valor_produto: valorProduto, valor_frete: valorFreteCalculado })
+            })
+            .then(res => res.json())
+            .then(session => {
+                return stripe.redirectToCheckout({ sessionId: session.id });
+            })
+            .catch(error => console.error("Erro:", error));
+        });
+    </script>
+</body>
+</html>
+
