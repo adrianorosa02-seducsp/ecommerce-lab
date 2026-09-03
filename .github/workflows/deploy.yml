@@ -1,0 +1,38 @@
+name: Deploy Python Web
+on: [push]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enviar Código via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "."
+          # Ajustado para cair direto na pasta labXX que o Nginx está monitorando
+          target: "/var/inetpub/wwwroot/projetos/lab${{ vars.ALUNO_NUM }}"
+
+      - name: Poetry & PM2 Restart via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            # 1. Entrar na pasta do Lab
+            cd /var/inetpub/wwwroot/projetos/lab${{ vars.ALUNO_NUM }}
+            
+            # 2. Configurar Path e Instalar dependências
+            export PATH="$HOME/.local/bin:$PATH"
+            poetry install --only main
+            
+            # 3. Restart Inteligente no PM2
+            # Usamos a porta 80XX baseada no número do lab
+            pm2 delete "lab-${{ vars.ALUNO_NUM }}" || true
+            pm2 start "poetry run gunicorn -b 0.0.0.0:80${{ vars.ALUNO_NUM }} main:app" --name "lab-${{ vars.ALUNO_NUM }}"
+            pm2 save
