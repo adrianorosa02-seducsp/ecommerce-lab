@@ -39,43 +39,67 @@
         let valorProduto = 100.0;
         let valorFreteCalculado = 0.0;
 
+        const infoFrete = document.getElementById("info-frete");
+        const resumoFrete = document.getElementById("resumo-frete");
+        const resumoTotal = document.getElementById("resumo-total");
+        const checkoutButton = document.getElementById("checkout-button");
+
+        function atualizarResumoFrete() {
+            resumoFrete.innerText = `Frete: R$ ${valorFreteCalculado.toFixed(2)}`;
+            const total = valorProduto + valorFreteCalculado;
+            resumoTotal.innerText = `Total: R$ ${total.toFixed(2)}`;
+            checkoutButton.disabled = valorFreteCalculado <= 0;
+        }
+
+        function exibirErroFrete(mensagem) {
+            infoFrete.innerHTML = `<p class="text-danger"><strong>Não foi possível calcular o frete.</strong><br>${mensagem}</p>`;
+            valorFreteCalculado = 0.0;
+            atualizarResumoFrete();
+        }
+
         function calcularFrete() {
             const endereco = document.getElementById("endereco").value;
             if (!endereco || !endereco.trim()) {
-                alert('Por favor, informe o endereço para calcular o frete.');
+                exibirErroFrete('Por favor, informe o endereço para calcular o frete.');
                 return;
             }
+
+            valorFreteCalculado = 0.0;
+            atualizarResumoFrete();
+            infoFrete.innerHTML = '<p class="text-muted">Calculando frete...</p>';
+
             fetch("/api/calcular-frete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ endereco_destino: endereco })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.erro) {
-                    alert(data.erro);
-                    return;
+            .then(async res => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok && !data.valor_frete) {
+                    throw new Error(data.erro || 'Não foi possível calcular o frete.');
                 }
-                // atualiza valor do frete com o valor retornado pela API
-                valorFreteCalculado = Number(data.valor_frete) || 0;
-                // corrigir id usado e exibir o valor calculado corretamente
-                document.getElementById("info-frete").innerHTML = 
-                    `<p class="text-success"><strong>Modalidade:</strong> ${data.modalidade}<br>` +
-                    `<strong>Distância:</strong> ${data.distancia_km} km (<em>${data.tempo_estimado}</em>)<br>` +
+                return data;
+            })
+            .then(data => {
+                valorFreteCalculado = Number(data.valor_frete) || 29.9;
+                const tipoFrete = data.fallback ? 'Frete padrão' : data.modalidade;
+                const distanciaTexto = data.fallback ? 'uso do valor padrão' : `${data.distancia_km} km`;
+                const tempoTexto = data.fallback ? 'estimativa indisponível' : data.tempo_estimado;
+
+                infoFrete.innerHTML = 
+                    `<p class="text-success"><strong>Modalidade:</strong> ${tipoFrete}<br>` +
+                    `<strong>Distância:</strong> ${distanciaTexto} (<em>${tempoTexto}</em>)<br>` +
                     `<strong>Frete:</strong> R$ ${valorFreteCalculado.toFixed(2)}</p>`;
 
-                document.getElementById("resumo-frete").innerText = `Frete: R$ ${valorFreteCalculado.toFixed(2)}`;
-                let total = valorProduto + valorFreteCalculado;
-                document.getElementById("resumo-total").innerText = `Total: R$ ${total.toFixed(2)}`;
-                document.getElementById("checkout-button").removeAttribute("disabled");
+                atualizarResumoFrete();
             })
             .catch(err => {
                 console.error('Erro ao calcular frete:', err);
-                alert('Não foi possível calcular o frete. Tente novamente mais tarde.');
+                exibirErroFrete(err.message);
             });
         }
 
-        document.getElementById("checkout-button").addEventListener("click", () => {
+        checkoutButton.addEventListener("click", () => {
             fetch("/criar-checkout-session", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -87,6 +111,8 @@
             })
             .catch(error => console.error("Erro:", error));
         });
+
+        atualizarResumoFrete();
     </script>
 </body>
 </html>

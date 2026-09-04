@@ -9,6 +9,7 @@ load_dotenv()
 app = Flask(__name__)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+DEFAULT_FRETE = 29.90
 
 # Centro de Distribuição da Empresa (Exemplo: Marília/SP)
 ORIGIN_ADDRESS = "Av. das Esmeraldas, Marília - SP"
@@ -19,8 +20,23 @@ def index():
 
 @app.route("/api/calcular-frete", methods=["POST"])
 def calcular_frete():
-    data = request.json
-    destino = data.get("endereco_destino")
+    data = request.get_json(silent=True) or {}
+    destino = (data.get("endereco_destino") or "").strip()
+
+    if not destino:
+        return jsonify({"erro": "Informe um endereço válido para calcular o frete."}), 400
+
+    def resposta_frete_padrao():
+        return jsonify({
+            "distancia_km": 0,
+            "tempo_estimado": "Frete padrão",
+            "valor_frete": round(DEFAULT_FRETE, 2),
+            "modalidade": "Frete padrão (valor fixo)",
+            "fallback": True,
+        })
+
+    if not GOOGLE_MAPS_API_KEY:
+        return resposta_frete_padrao()
 
     # Chamada à Distance Matrix API do Google Maps
     url = "https://maps.googleapis.com/maps/api/distancematrix/json"
@@ -30,16 +46,23 @@ def calcular_frete():
         "mode": "driving",
         "key": GOOGLE_MAPS_API_KEY
     }
-    
-    response = requests.get(url, params=params)
-    resultado = response.json()
 
-    if resultado["status"] != "OK":
-        return jsonify({"erro": "Não foi possível calcular a rota para o endereço informado."}), 400
+    try:
+        response = requests.get(url, params=params, timeout=15)
+        resultado = response.json()
+    except requests.RequestException:
+        return resposta_frete_padrao()
 
-    elemento = resultado["rows"][0]["elements"][0]
-    if elemento["status"] != "OK":
-        return jsonify({"erro": "Endereço de destino inválido ou inacessível por rotas terrestres."}), 400
+    if resultado.get("status") != "OK":
+        return resposta_frete_padrao()
+
+    rows = resultado.get("rows") or []
+    if not rows:
+        return resposta_frete_padrao()
+
+    elemento = rows[0].get("elements", [{}])[0]
+    if elemento.get("status") != "OK":
+        return resposta_frete_padrao()
 
     distancia_km = elemento["distance"]["value"] / 1000.0  # Convertendo para KM
     duracao = elemento["duration"]["text"]
@@ -52,7 +75,8 @@ def calcular_frete():
         "distancia_km": round(distancia_km, 2),
         "tempo_estimado": duracao,
         "valor_frete": round(valor_frete, 2),
-        "modalidade": "Transportadora Rodoviária Privada (Exclusivo - Sem Correios)"
+        "modalidade": "Transportadora Rodoviária Privada (Exclusivo - Sem Correios)",
+        "fallback": False,
     })
 
 @app.route("/criar-checkout-session", methods=["POST"])
