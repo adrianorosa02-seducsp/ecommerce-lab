@@ -15,6 +15,10 @@ DEFAULT_FRETE = 29.90
 ORIGIN_ADDRESS = "Av. das Esmeraldas, Marília - SP"
 
 @app.route("/")
+def loja():
+    return render_template("loja.html")
+
+@app.route("/checkout")
 def index():
     return render_template("checkout.html", stripe_public_key=os.getenv("STRIPE_PUBLIC_KEY"))
 
